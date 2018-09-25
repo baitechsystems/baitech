@@ -1,0 +1,76 @@
+#1. Link ==> https://jenkins.io/blog/2017/02/07/declarative-maven-project/
+#2. Redhat ==> https://www.redhat.com/en/blog/integrating-ansible-jenkins-cicd-process
+#!groovy
+
+pipeline {
+    agent any
+    
+      tools {
+      nodejs 'version as shown in jenkins'
+    }
+    
+    stages {
+        stage('Build') {
+            steps {
+                sh 'ls -la'
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                echo 'Testing..'
+            }
+        }
+
+
+        stage('SonarQube Analysis') {
+        		steps {
+             	withSonarQubeEnv('SonarQube') {
+               	 //sh 'mvn clean package sonar:sonar -Dspring.profiles.active=test'
+		sh '/opt/sonar-scanner/bin/sonar-scanner -Dsonar.sources=.'
+              	}
+            }
+        }
+
+        stage('Quality Gate') {
+        		steps {
+              	timeout(time: 1, unit: 'MINUTES') {
+                		waitForQualityGate abortPipeline: true
+              	}
+            }
+        }
+        	
+
+        stage('Deploy') {
+            steps {
+                script {
+                    try {
+                        sh "rsync -avzc ${env.WORKSPACE}/ user@dest:/"
+                        sh 'ssh -l user dest "command"' 
+                    }
+                    finally {
+                        echo 'Great job'
+                    }
+                }
+            }
+        }
+    }
+
+// Cleaning up and Notifications: https://jenkins.io/doc/pipeline/tour/post/
+    post {
+        always {
+            echo 'This will always run'
+        }
+        failure {
+            echo 'This will run only if it failed'
+            slackSend (color: 'RED', message: "FAILED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+        }
+        success {
+            echo 'This will run only if successful'
+            slackSend channel: '#channel',
+                color: 'good',
+                //message: "The pipeline ${currentBuild.fullDisplayName} completed successful. Testing..."
+                message: "The pipeline ${env.JOB_NAME} #${env.BUILD_NUMBER} has completed successful"
+        }
+    }
+}
